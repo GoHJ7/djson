@@ -2,9 +2,12 @@ package djson
 
 import (
 	"encoding/base64"
+	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/friendsofgo/errors"
 )
 
 const (
@@ -542,6 +545,310 @@ func GetVItem(name string, ejson *JSON) *VItem {
 	return eitem
 }
 
+var ErrEmptyjson = errors.New("empty validator")
+var ErrArrayjson = errors.New("No valid element while root is an array or string")
+
+func (m *Validator) IsValidWithError(tjson *JSON) (error, bool) {
+	if tjson == nil {
+		if len(m.RootItems) == 0 {
+			return nil, true
+		} else {
+			return ErrEmptyjson, false
+		}
+	}
+
+	if m.Syntax.IsObject() { // json must be valid one
+
+		for _, vitem := range m.RootItems {
+			return CheckVItemWithError(vitem, tjson)
+		}
+
+	} else if m.Syntax.IsArray() || m.Syntax.IsString() {
+		// each element must be valid for one of vitems
+
+		if len(m.RootItems) == 0 {
+			// log.Println("empty rootitems")
+			return nil, true
+		}
+
+		for _, vitem := range m.RootItems {
+			if _, check := CheckVItemWithError(vitem, tjson); check {
+				return nil, true
+			}
+		}
+
+		return ErrArrayjson, false
+	}
+
+	return nil, true
+
+}
+
+func typeToReadable(t int) string {
+	switch t {
+	case 0:
+		return "null"
+	case 1:
+		return "int"
+	case 2:
+		return "float"
+	case 3:
+		return "number"
+	case 4:
+		return "string"
+	case 5:
+		return "bool"
+	case 6:
+		return "object"
+	case 7:
+		return "array"
+	case 8:
+		return "multi"
+	default:
+		return "something wrong with type"
+	}
+}
+
+func CheckVItemWithError(vi *VItem, tjson *JSON) (error, bool) {
+	if vi.Name == "" {
+		err := fmt.Errorf("%s >> empty name", vi.Name)
+		return err, false
+	}
+
+	var vtype string
+
+	if vi.Name == "__root__" || vi.Name == "__array__" {
+		vtype = tjson.Type()
+	} else {
+		vtype = tjson.Type(vi.Name)
+	}
+
+	if vtype == "" && !vi.IsRequred {
+		return nil, true
+	}
+
+	switch vi.Type {
+	case V_TYPE_INT:
+		if vtype != "int" {
+			err := fmt.Errorf("%s >> your type must be %s but is %s", vi.Name, vtype, typeToReadable(vi.Type))
+			return err, false
+		}
+
+		var si int64
+
+		if vi.Name == "__root__" || vi.Name == "__array__" {
+			si = tjson.Int()
+		} else {
+			si = tjson.Int(vi.Name)
+		}
+
+		if vi.Max < si {
+			err := fmt.Errorf("%s >> Out of range. Must be under %d but is %d", vi.Name, vi.Max, si)
+			return err, false
+		}
+
+		if vi.Min > si {
+			err := fmt.Errorf("%s >> Out of range. Must be over %d but is %d", vi.Name, vi.Min, si)
+			return err, false
+		}
+
+	case V_TYPE_FLOAT:
+		if vtype != "float" {
+			err := fmt.Errorf("%s >> your type must be %s but is %s", vi.Name, vtype, typeToReadable(vi.Type))
+			return err, false
+		}
+
+		fallthrough
+
+	case V_TYPE_NUMBER:
+		if !(vtype == "float" || vtype == "int") {
+			err := fmt.Errorf("%s >> your type must be %s but is %s", vi.Name, vtype, typeToReadable(vi.Type))
+			return err, false
+		}
+
+		var sf float64
+
+		if vi.Name == "__root__" || vi.Name == "__array__" {
+			sf = tjson.Float()
+		} else {
+			sf = tjson.Float(vi.Name)
+		}
+
+		if vi.MaxFloat < sf {
+			err := fmt.Errorf("%s >> Out of range. Must be under %f but is %f", vi.Name, vi.MaxFloat, sf)
+			return err, false
+		}
+
+		if vi.MinFloat > sf {
+			err := fmt.Errorf("%s >> Out of range. Must be over %f but is %f", vi.Name, vi.MinFloat, sf)
+			return err, false
+		}
+	case V_TYPE_STRING:
+		if vtype != "string" {
+			err := fmt.Errorf("%s >> your type must be %s but is %s", vi.Name, vtype, typeToReadable(vi.Type))
+			return err, false
+		}
+
+		var ss string
+
+		if vi.Name == "__root__" || vi.Name == "__array__" {
+			ss = tjson.String()
+		} else {
+			ss = tjson.String(vi.Name)
+		}
+
+		lenv := int64(len(ss))
+
+		if lenv > vi.Max {
+			err := fmt.Errorf("%s >> Length out of range. Must be under %d characters but is %d characters", vi.Name, vi.Max, lenv)
+			return err, false
+		}
+		if lenv < vi.Min {
+			err := fmt.Errorf("%s >> Length out of range. Must be at least %d characters but is %d characters", vi.Name, vi.Min, lenv)
+			return err, false
+		}
+
+		if vi.RegExp != nil {
+			err := fmt.Errorf("%s >> regex compilation fail", vi.Name)
+			return err, vi.RegExp.Match([]byte(ss))
+		}
+
+		if vi.CheckFunc != nil {
+			err := fmt.Errorf("%s >> check func fail", vi.Name)
+			return err, vi.CheckFunc(ss, vi.Min, vi.Max)
+		}
+
+	case V_TYPE_OBJECT:
+		if vi.Name == "__root__" && vtype != "object" {
+			err := fmt.Errorf("%s >> your type must be %s but is %s", vi.Name, vtype, typeToReadable(vi.Type))
+			return err, false
+		}
+
+		var so *JSON
+		var ok bool
+
+		if vi.Name == "__root__" || vi.Name == "__array__" {
+			so, ok = tjson.Object()
+			if !ok {
+				err := fmt.Errorf("%s >> object conversion fail", vi.Name)
+				return err, false
+			}
+		} else {
+			so, ok = tjson.Object(vi.Name)
+		}
+
+		if vi.IsRequred && !ok {
+			err := fmt.Errorf("%s >> required", vi.Name)
+			return err, false
+		}
+
+		if !ok {
+			return nil, true
+		}
+
+		for _, svi := range vi.SubItems {
+			if err, check := CheckVItemWithError(svi, so); !check {
+				err = fmt.Errorf("%s.%s", vi.Name, err.Error())
+				return err, false
+			}
+		}
+
+	case V_TYPE_ARRAY:
+		if vi.Name == "__root__" && vtype != "array" {
+			err := fmt.Errorf("%s >> your type must be %s but is %s", vi.Name, vtype, typeToReadable(vi.Type))
+			return err, false
+		}
+
+		var sa *JSON
+		var ok bool
+
+		if vi.Name == "__root__" || vi.Name == "__array__" {
+			sa, ok = tjson.Array()
+			if !ok {
+				err := fmt.Errorf("%s >> array conversion fail", vi.Name)
+				return err, false
+			}
+		} else {
+			sa, ok = tjson.Array(vi.Name)
+		}
+
+		if vi.IsRequred && !ok {
+			err := fmt.Errorf("%s >> required", vi.Name)
+			return err, false
+		}
+
+		if !ok {
+			return nil, true
+		}
+
+		lenv := int64(sa.Len())
+		if lenv > vi.Max {
+			err := fmt.Errorf("%s >> array length out of range. Must be at most %d but is %d", vi.Name, vi.Max, lenv)
+			return err, false
+		}
+
+		if lenv < vi.Min {
+			err := fmt.Errorf("%s >> array length out of range. Must be at least %d but is %d", vi.Name, vi.Min, lenv)
+			return err, false
+		}
+
+		if ok {
+			if len(vi.SubItems) == 0 {
+				return nil, true
+			}
+
+			sa.Seek() // valid element type
+			for sa.Next() {
+				ssa := sa.Scan()
+				isValid := false
+				for _, svi := range vi.SubItems {
+					if _, check := CheckVItemWithError(svi, ssa); check {
+						isValid = true
+						break
+					}
+				}
+
+				// error of array can't be determined
+				if !isValid {
+					err := fmt.Errorf("%s >> no valid element in the array", vi.Name)
+					return err, false
+				}
+			}
+		}
+
+	case V_TYPE_BOOL:
+
+		var ok bool
+		if vi.Name == "__root__" || vi.Name == "__array__" {
+			ok = tjson.IsBool()
+		} else {
+			ok = tjson.IsBool(vi.Name)
+		}
+
+		if vi.IsRequred && !ok {
+			err := fmt.Errorf("%s >> required", vi.Name)
+			return err, false
+		}
+
+	case V_TYPE_MULTI:
+
+		isValid := false
+
+		for _, svi := range vi.SubItems {
+			if _, check := CheckVItemWithError(svi, tjson); check {
+				isValid = true
+				break
+			}
+		}
+
+		if !isValid {
+			err := fmt.Errorf("%s >> no valid element in the multi type", vi.Name)
+			return err, false
+		}
+	}
+	return nil, true
+}
+
 func (m *Validator) IsValid(tjson *JSON) bool {
 	if tjson == nil {
 		return len(m.RootItems) == 0
@@ -587,8 +894,6 @@ func CheckVItem(vi *VItem, tjson *JSON) bool {
 		vtype = tjson.Type(vi.Name)
 	}
 
-	//log.Println("CheckVItem ", vi.Name, " ", vtype, " ", vi.Type, " ", tjson.ToString())
-
 	if vtype == "" && !vi.IsRequred {
 		return true
 	}
@@ -611,15 +916,15 @@ func CheckVItem(vi *VItem, tjson *JSON) bool {
 			return false
 		}
 
-	case V_TYPE_FLOAT:
-		if vtype != "float" {
+	case V_TYPE_NUMBER:
+		if vtype != "float" && vtype != "int" {
 			return false
 		}
 
 		fallthrough
 
-	case V_TYPE_NUMBER:
-		if !(vtype == "float" || vtype == "int") {
+	case V_TYPE_FLOAT:
+		if vtype != "float" {
 			return false
 		}
 
