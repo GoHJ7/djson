@@ -630,7 +630,7 @@ func CheckVItemWithError(vi *VItem, tjson *JSON) (error, bool) {
 	switch vi.Type {
 	case V_TYPE_INT:
 		if vtype != "int" {
-			err := fmt.Errorf("%s >> your type must be %s but is %s", vi.Name, vtype, typeToReadable(vi.Type))
+			err := fmt.Errorf("%s >> your type must be %s but is %s", vi.Name, typeToReadable(vi.Type), vtype)
 			return err, false
 		}
 
@@ -654,7 +654,7 @@ func CheckVItemWithError(vi *VItem, tjson *JSON) (error, bool) {
 
 	case V_TYPE_FLOAT:
 		if vtype != "float" {
-			err := fmt.Errorf("%s >> your type must be %s but is %s", vi.Name, vtype, typeToReadable(vi.Type))
+			err := fmt.Errorf("%s >> your type must be %s but is %s", vi.Name, typeToReadable(vi.Type), vtype)
 			return err, false
 		}
 
@@ -662,7 +662,7 @@ func CheckVItemWithError(vi *VItem, tjson *JSON) (error, bool) {
 
 	case V_TYPE_NUMBER:
 		if !(vtype == "float" || vtype == "int") {
-			err := fmt.Errorf("%s >> your type must be %s but is %s", vi.Name, vtype, typeToReadable(vi.Type))
+			err := fmt.Errorf("%s >> your type must be %s but is %s", vi.Name, typeToReadable(vi.Type), vtype)
 			return err, false
 		}
 
@@ -685,7 +685,7 @@ func CheckVItemWithError(vi *VItem, tjson *JSON) (error, bool) {
 		}
 	case V_TYPE_STRING:
 		if vtype != "string" {
-			err := fmt.Errorf("%s >> your type must be %s but is %s", vi.Name, vtype, typeToReadable(vi.Type))
+			err := fmt.Errorf("%s >> your type must be %s but is %s", vi.Name, typeToReadable(vi.Type), vtype)
 			return err, false
 		}
 
@@ -720,7 +720,7 @@ func CheckVItemWithError(vi *VItem, tjson *JSON) (error, bool) {
 
 	case V_TYPE_OBJECT:
 		if vi.Name == "__root__" && vtype != "object" {
-			err := fmt.Errorf("%s >> your type must be %s but is %s", vi.Name, vtype, typeToReadable(vi.Type))
+			err := fmt.Errorf("%s >> your type must be %s but is %s", vi.Name, typeToReadable(vi.Type), vtype)
 			return err, false
 		}
 
@@ -755,7 +755,7 @@ func CheckVItemWithError(vi *VItem, tjson *JSON) (error, bool) {
 
 	case V_TYPE_ARRAY:
 		if vi.Name == "__root__" && vtype != "array" {
-			err := fmt.Errorf("%s >> your type must be %s but is %s", vi.Name, vtype, typeToReadable(vi.Type))
+			err := fmt.Errorf("%s >> your type must be %s but is %s", vi.Name, typeToReadable(vi.Type), vtype)
 			return err, false
 		}
 
